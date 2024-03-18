@@ -1,7 +1,16 @@
 const asyncHandler = require("express-async-handler");
 const User = require("../models/userModel");
-const bcrypt = require("bcryptjs")
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
 
+
+//Generate Token
+const generateToken = (id) => {
+    return jwt.sign({id}, process.env.JWT_SECRET, {expiresIn: "1d"})
+  
+};
+
+//Register User
 
 const registerUser = asyncHandler(async (req, res) => {
   const {name, email, password} = req.body
@@ -24,22 +33,40 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new Error("Email has already been registered")
     }
 
-    //Encrypt password before saving to DB
-    const salt = await bcrypt.genSalt(10)
-    const hashedPassword = await bcrypt.hash(password, salt)
+   
+
 
     //Create new user
     const user = await User.create({
         name,
         email,
-        password: hashedPassword,
+        password,
 
     })
+    
+     // Generate Token
+     const token = generateToken(user._id);
+
+     // Send HTTP-only cookie
+     res.cookie("token", token, {
+        path: "/",
+        httpOnly: true,
+        expires: new Date(Date.now() + 1000 * 86400), //1 day
+        sameSite: "none",
+        secure: true
+
+
+     });
 
     if(user){
         const {_id, name, email, position, phone} = user
         res.status(201).json({
-            _id, name, email, position, phone
+            _id, 
+            name, 
+            email, 
+            position, 
+            phone,
+            token,
         })
     } else{
         res.status(400)
@@ -49,7 +76,51 @@ const registerUser = asyncHandler(async (req, res) => {
 
 });
 
+
+// Login User
+const loginUser = asyncHandler (async(req, res) => {
+    const {email,password} = req.body
+
+    //validate Request
+    if(!email || !password){
+        res.status(400);
+        throw new Error("Please add email and password");
+    }
+
+    //Check if user exists
+
+    const user = await User.findOne({email})
+
+    if(!user){
+        res.status(400);
+        throw new Error("User not found,please signUp");
+    }
+
+    //User exists, check if password is correct
+    const passwordIsCorrect = await bcrypt.compare(password, user.password)
+
+    if(user && passwordIsCorrect){
+        const {_id, name, email, position, phone} = user
+        res.status(200).json({
+            _id, 
+            name, 
+            email, 
+            position, 
+            phone,
+        });
+    } else{
+        res.status(400);
+        throw new Error("Invalid email or password");
+
+
+    }
+
+
+});
+
+
 module.exports = {
     registerUser,
+    loginUser,
 };
 
